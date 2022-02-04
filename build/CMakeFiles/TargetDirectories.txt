@@ -1,0 +1,3 @@
+D:/Soft/odol2mlod/build/CMakeFiles/odol2mlod.dir
+D:/Soft/odol2mlod/build/CMakeFiles/edit_cache.dir
+D:/Soft/odol2mlod/build/CMakeFiles/rebuild_cache.dir

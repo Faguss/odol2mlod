@@ -1,0 +1,3 @@
+"C:\Program Files\CMake\bin\cmake.exe" -E rm -f CMakeFiles\odol2mlod.dir/objects.a
+C:\MinGW\bin\ar.exe cr CMakeFiles\odol2mlod.dir/objects.a @CMakeFiles\odol2mlod.dir\objects1.rsp
+C:\MinGW\bin\g++.exe  -std=c++17   -Wl,--whole-archive CMakeFiles\odol2mlod.dir/objects.a -Wl,--no-whole-archive  -o odol2mlod.exe -Wl,--out-implib,libodol2mlod.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\odol2mlod.dir\linklibs.rsp
