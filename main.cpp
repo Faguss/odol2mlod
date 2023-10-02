@@ -29,7 +29,10 @@ enum PROGRAM_OPTIONS {
 	OPTION_TRUNCATE               = 0x10,
 	OPTION_MERGE_POINTS           = 0x20,
 	OPTION_MERGE_POINTS_SELECTIVE = 0x40,
-	OPTION_ONLY_USER_VALUE        = 0x80
+	OPTION_ONLY_USER_VALUE        = 0x80,
+	OPTION_TEXTURE_LIST           = 0x100,
+	OPTION_TEXTURE_LIST_LODS      = 0x200,
+	OPTION_TEXTURE_LIST_SINGLE    = 0x400,
 };
 
 constexpr static uint32_t signature_mlod = 0x444f4c4d;
@@ -41,6 +44,7 @@ struct GLOBAL_VARIABLES {
 	int files_ok;
 	int files_total;
 	std::vector<std::string> files_to_skip;
+	std::vector<std::string> texture_list;
 } global = {
 	0,
 	0
@@ -226,7 +230,7 @@ void ReadValueChar(std::string& value, uint32_t size, fp::file& file) {
 	value.clear();
 	bool end = false;
 	
-	for (int i=0; i<size; i++) {
+	for (unsigned int i=0; i<size; i++) {
 		const auto c = file.getc();
 		if (c=='\0' || c==EOF)
 			end = true;
@@ -384,7 +388,7 @@ public:
 			ReadValue(size, file);
 			uint32_t offset = 0;
 			m_orignalFaces.reserve(count);
-			for (int i = 0; i < count; i++) {
+			for (unsigned int i = 0; i < count; i++) {
 				uint32_t flags;
 				ReadValue(flags, file);
 				uint16_t textureIndex;
@@ -938,23 +942,25 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 	std::string filename_output  = "";
 	
 	if (options & OPTION_INFO) {
-		filename_output = CreateOutPath(filename_input, ".txt");
-		
-		if (options & (OPTION_SINGLELOG)) {
-			filename_output = "odol2mlod.txt";
+		if (~options & OPTION_TEXTURE_LIST_SINGLE) {
+			filename_output = CreateOutPath(filename_input, ".txt");
 			
-			if (options & OPTION_TRUNCATE)
-				options &= ~OPTION_TRUNCATE;
-			else {
-				mode |= std::ios::app;
-				mode &= ~std::ios::trunc;
+			if (options & (OPTION_SINGLELOG)) {
+				filename_output = "odol2mlod.txt";
+				
+				if (options & OPTION_TRUNCATE)
+					options &= ~OPTION_TRUNCATE;
+				else {
+					mode |= std::ios::app;
+					mode &= ~std::ios::trunc;
+				}
 			}
 		}
 	} else
 		if (current_file_signature == signature_odol)
 			filename_output = CreateOutPath(filename_input);
 
-	if (!filename_output.empty()) {
+	if (!filename_output.empty() && ~options & OPTION_TEXTURE_LIST_SINGLE) {
 		out.open(filename_output.c_str(), mode);
 		
 		if (!out.is_open()) {
@@ -965,7 +971,7 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 	
 	global.files_ok++;
 	
-	if (options & (OPTION_SINGLELOG)  &&  ~mode & std::ios::trunc)
+	if (options & (OPTION_SINGLELOG) && ~options & OPTION_TEXTURE_LIST_SINGLE && ~mode & std::ios::trunc)
 		out << std::endl << std::endl << "====================================" << std::endl << std::endl;
 	
 	// Parse input
@@ -973,164 +979,204 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 		Shape shape(file);
 		
 		if (options & OPTION_INFO) {
-			out << 
-			filename_input << " - " << file_info << std::endl << std::endl <<
-			"Signature: "<< FormatSignature(current_file_signature) << std::endl << 
-			"Version: " << shape.m_version << std::endl <<
-			"Number of LODs: " << shape.m_lodCount << std::endl << 
-			"Flags: " << std::hex << "0x" << shape.m_properties << std::endl;
-			
-			for (int i=1; options & OPTION_INFO_FULL && i<0x80000000; i*=2)
-				if (shape.m_properties & i) 
-					out << "\t 0x" << i << std::endl;
-			
-			out << std::dec <<
-			"Bounding sphere radius: " << shape.m_lodSphere << std::endl << 
-			"Bounding geometry sphere radius: " << shape.m_physicsSphere << std::endl << 
-			"Remarks: " << shape.m_properties2 << std::endl << 
-			"Hints and: " << shape.m_hintsAnd << std::endl << 
-			"Hints or: " << shape.m_hintsOr << std::endl << 
-			"Aim point x:" << shape.m_aimPoint.X() << " y:" << shape.m_aimPoint.Y() << " z:" << shape.m_aimPoint.Z() << std::endl << 
-			"Color:" << (int)shape.m_color.r << " g:" << (int)shape.m_color.g << " b:" << (int)shape.m_color.b << " a:" << (int)shape.m_color.a << std::endl << 
-			"Color top r:" << (int)shape.m_color2.r << " g:" << (int)shape.m_color2.g << " b:" << (int)shape.m_color2.b << " a:" << (int)shape.m_color2.a << std::endl << 
-			"View density: " << shape.m_density << std::endl << 
-			"Bounding sphere min x:" << shape.m_min.X() << " y:" << shape.m_min.Y() << " z:" << shape.m_min.Z() << std::endl << 
-			"Bounding sphere max x:" << shape.m_max.X() << " y:" << shape.m_max.Y() << " z:" << shape.m_max.Z() << std::endl << 
-			"Bounding sphere center x:" << shape.m_lodCenter.X() << " y:" << shape.m_lodCenter.Y() << " z:" << shape.m_lodCenter.Z() << std::endl << 
-			"Bounding geometry sphere center x:" << shape.m_physicsCenter.X() << " y:" << shape.m_physicsCenter.Y() << " z:" << shape.m_physicsCenter.Z() << std::endl << 
-			"Mass center x:" << shape.m_massCenter.X() << " y:" << shape.m_massCenter.Y() << " z:" << shape.m_massCenter.Z() << std::endl << 
-			"Inverse inertia tensor a:" << shape.m_invInertia.Aside().Size() << " u:" << shape.m_invInertia.Up().Size() << " d:" << shape.m_invInertia.Direction().Size() << std::endl << 
-			"Auto center: " << shape.m_autoCenter << std::endl << 
-			"Lock auto center: " << shape.m_autoCenter2 << std::endl << 
-			"Can occlude: " << shape.m_canOcclude << std::endl << 
-			"Can be occluded: " << shape.m_canBeOccluded << std::endl << 
-			"Allow animation: " << shape.m_allowAnimation << std::endl << 
-			"Map type: " << (int)shape.m_mapType << std::endl << 
-			"Mass array count: " << shape.m_masses.size() << std::endl;
-			
-			for (int j=0; j<shape.m_masses.size() && options & OPTION_INFO_FULL; j++)
-				out << "\t" << j << " - " << shape.m_masses[j] << std::endl;
+			if (options & OPTION_TEXTURE_LIST) {
+				if (~options & OPTION_TEXTURE_LIST_SINGLE) {
+					out << filename_input << std::endl << std::endl;
+					global.texture_list.clear();
+				}
+				bool output_lod_name = false;
 				
-			out << 
-			"Mass: " << shape.m_mass << std::endl << 
-			"Mass inverse: " << shape.m_invMass << std::endl << 
-			"Armor: " << shape.m_armor << std::endl << 
-			"Armor inverse: " << shape.m_invArmor << std::endl << 
-			"Memory LOD index: " << (int)shape.m_memoryLodIndex << std::endl << 
-			"Geometry LOD index: " << (int)shape.m_geometryLodIndex << std::endl << 
-			"Fire geometry LOD index: " << (int)shape.m_geometryFireLodIndex << std::endl << 
-			"View geometry LOD index: " << (int)shape.m_geometryViewLodIndex << std::endl << 
-			"View pilot geometry LOD index: " << (int)shape.m_geometryViewPilotLodIndex << std::endl << 
-			"View gunner geometry LOD index: " << (int)shape.m_geometryViewGunnerLodIndex << std::endl << 
-			"View command geometry LOD index: " << (int)shape.m_geometryViewCommanderLodIndex << std::endl << 
-			"View cargo geometry LOD index: " << (int)shape.m_geometryViewCargoLodIndex << std::endl << 
-			"Land contact LOD index: " << (int)shape.m_landContactLodIndex << std::endl << 
-			"Roadway LOD index: " << (int)shape.m_roadwayLodIndex << std::endl << 
-			"Paths LOD index: " << (int)shape.m_pathsLodIndex << std::endl << 
-			"Hitpoints LOD index: " << (int)shape.m_hitpointsLodIndex;
-			
-			for (int i=0; i<shape.m_lods.size(); i++) {
-				LodShape *l = &shape.m_lods[i];
-				
-				out << std::endl << std::endl << 
-				"LOD: " << FormatLodType(shape.m_lodDistances[i]) << std::endl <<
-				"Flags count: " << l->m_flags.size() << std::endl;
-				
-				for (int j=0; j<l->m_flags.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - 0x" << std::hex << l->m_flags[j] << std::dec << std::endl;
-
-				out << 
-				"UV: " << l->m_uv.size() << std::endl;
-				
-				for (int j=0; j<l->m_uv.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - u:" << l->m_uv[j].X() << " v:" << l->m_uv[j].Y() << std::endl;
-				
-				out <<
-				"Points: " << l->m_positions.size() << std::endl;
-				
-				for (int j=0; j<l->m_positions.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - x:" << l->m_positions[j].X() << " y:" << l->m_positions[j].Y() << " z:" << l->m_positions[j].Z() << std::endl;
+				for (unsigned int i=0; i<shape.m_lods.size(); i++) {
+					LodShape *l = &shape.m_lods[i];
 					
-				out << 
-				"Normals: " << l->m_normals.size() << std::endl;
-				
-				for (int j=0; j<l->m_normals.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - x:" << l->m_normals[j].X() << " y:" << l->m_normals[j].Y() << " z:" << l->m_normals[j].Z() << std::endl;
+					if (options & OPTION_TEXTURE_LIST_LODS) {
+						output_lod_name = true;
+						global.texture_list.clear();
+					}
 					
-				out << 
-				"Hints or: " << l->m_hintsOr << std::endl	<< 
-				"Hints and: " << l->m_hintsAnd << std::endl << 
-				"Min pos x:" << l->m_min.X() << " y:" << l->m_min.Y() << " z:" << l->m_min.Z() << std::endl << 
-				"Max pos x:" << l->m_max.X() << " y:" << l->m_max.Y() << " z:" << l->m_max.Z() << std::endl << 
-				"Center pos x:" << l->m_center.X() << " y:" << l->m_center.Y() << " z:" << l->m_center.Z() << std::endl << 
-				"Radius: " << l->m_radius << std::endl << 
-				"Textures: " << l->m_textureNames.size() << std::endl;
-				
-				for (int j=0; j<l->m_textureNames.size(); j++)
-					out << "\t" << l->m_textureNames[j] << std::endl;
-				
-				out << 
-				"Point to vertice index: " << l->m_pointToVertices.size() << std::endl;
-				
-					for (int j=0; j<l->m_pointToVertices.size() && options & OPTION_INFO_FULL; j++)
-						out << "\t" << j << " " << l->m_pointToVertices[j] << std::endl;
-				
-				out << "Vertice to point index: " << l->m_vertexToPoints.size() << std::endl;
-
-					for (int j=0; j<l->m_vertexToPoints.size() && options & OPTION_INFO_FULL; j++)
-						out << "\t" << j << " " << l->m_vertexToPoints[j] << std::endl;				
-				
-				out << "Faces: " << l->m_orignalFaces.size() << std::endl;
-				
-				for (int j=0; j<l->m_orignalFaces.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - flags:0x" << std::hex << l->m_orignalFaces[j].flags << std::dec << std::endl;
+					for (unsigned int j=0; j<l->m_textureNames.size(); j++) {
+						bool already_added = false;
+						
+						if (l->m_textureNames[j].empty()) 
+							continue;
+						
+						for (size_t k=0; k<global.texture_list.size() && !already_added; k++)
+							if (strcasecmp(global.texture_list[k].c_str(),l->m_textureNames[j].c_str()) == 0)
+								already_added = true;
 					
-				out << 
-				"Sections: " << l->m_sections.size() << std::endl;
-				
-				for (int j=0; j<l->m_sections.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - startIndex:" << l->m_sections[j].startIndex << " endIndex:" << l->m_sections[j].endIndex << " material:" << l->m_sections[j].material << " textureIndex:" << l->m_sections[j].textureIndex << " special:0x" << std::hex << l->m_sections[j].special << std::dec << std::endl;
-	
-				out << 
-				"Named sections: " << l->m_namedSections.size() << std::endl;
-				
-				for (int j=0; j<l->m_namedSections.size(); j++)
-					out << "\t" << l->m_namedSections[j].name << std::endl;
-					
-				out << "Properties: " << l->m_namedProperties.size()  << std::endl;
-				
-				for (int j=0; j<l->m_namedProperties.size(); j++)
-					out << "\t" << l->m_namedProperties[j].name << "=" << l->m_namedProperties[j].value << std::endl;
-					
-				out << 
-				"Animation frames: " << l->m_animationPhases.size() << std::endl;
-				
-				for (int j=0; j<l->m_animationPhases.size() && options & OPTION_INFO_FULL; j++) {
-					out << "\t" << j << " - Time:" << l->m_animationPhases[j].time << std::endl;
-					
-					for (int k=0; k<l->m_animationPhases[j].points.size(); k++) {
-						out << "\t\t"
-						" x:" << l->m_animationPhases[j].points[k].X() << 
-						" y:" << l->m_animationPhases[j].points[k].Y() << 
-						" z:" << l->m_animationPhases[j].points[k].Z() << 
-						std::endl;
+						if (!already_added) {
+							if (output_lod_name) {
+								output_lod_name = false;
+								out << "LOD: " << FormatLodType(shape.m_lodDistances[i]) << std::endl;
+							}
+							
+							if (~options & OPTION_TEXTURE_LIST_SINGLE)
+								out << (options & OPTION_TEXTURE_LIST_LODS ? "\t" : "") << l->m_textureNames[j] << std::endl;
+							
+							global.texture_list.push_back(l->m_textureNames[j]);
+						}
 					}
 				}
-
+			} else {
 				out << 
-				"Color top r:" << (int)l->m_color.r << " g:" << (int)l->m_color.g << " b:" << (int)l->m_color.b << " a:" << (int)l->m_color.a << std::endl << 
-				"Color r:" << (int)l->m_color2.r << " g:" << (int)l->m_color2.g << " b:" << (int)l->m_color2.b << " a:" << (int)l->m_color2.a << std::endl << 
-				"Flags: " << std::hex << "0x" << (int)l->m_flags2 << std::endl;
-
-				for (int j=1; options & OPTION_INFO_FULL && j<0x80000000; j*=2)
-					if (l->m_flags2 & j) 
-						out << "\t 0x" << j << std::endl;
-					
-				out << std::dec <<
-				"Proxies: " << l->m_proxies.size();
+				filename_input << " - " << file_info << std::endl << std::endl <<
+				"Signature: "<< FormatSignature(current_file_signature) << std::endl << 
+				"Version: " << shape.m_version << std::endl <<
+				"Number of LODs: " << shape.m_lodCount << std::endl << 
+				"Flags: " << std::hex << "0x" << shape.m_properties << std::endl;
 				
-				for (int j=0; j<l->m_proxies.size(); j++)
-					out << std::endl << "\t" << l->m_proxies[j].name;
+				for (unsigned int i=1; options & OPTION_INFO_FULL && i<0x80000000; i*=2)
+					if (shape.m_properties & i) 
+						out << "\t 0x" << i << std::endl;
+				
+				out << std::dec <<
+				"Bounding sphere radius: " << shape.m_lodSphere << std::endl << 
+				"Bounding geometry sphere radius: " << shape.m_physicsSphere << std::endl << 
+				"Remarks: " << shape.m_properties2 << std::endl << 
+				"Hints and: " << shape.m_hintsAnd << std::endl << 
+				"Hints or: " << shape.m_hintsOr << std::endl << 
+				"Aim point x:" << shape.m_aimPoint.X() << " y:" << shape.m_aimPoint.Y() << " z:" << shape.m_aimPoint.Z() << std::endl << 
+				"Color:" << (int)shape.m_color.r << " g:" << (int)shape.m_color.g << " b:" << (int)shape.m_color.b << " a:" << (int)shape.m_color.a << std::endl << 
+				"Color top r:" << (int)shape.m_color2.r << " g:" << (int)shape.m_color2.g << " b:" << (int)shape.m_color2.b << " a:" << (int)shape.m_color2.a << std::endl << 
+				"View density: " << shape.m_density << std::endl << 
+				"Bounding sphere min x:" << shape.m_min.X() << " y:" << shape.m_min.Y() << " z:" << shape.m_min.Z() << std::endl << 
+				"Bounding sphere max x:" << shape.m_max.X() << " y:" << shape.m_max.Y() << " z:" << shape.m_max.Z() << std::endl << 
+				"Bounding sphere center x:" << shape.m_lodCenter.X() << " y:" << shape.m_lodCenter.Y() << " z:" << shape.m_lodCenter.Z() << std::endl << 
+				"Bounding geometry sphere center x:" << shape.m_physicsCenter.X() << " y:" << shape.m_physicsCenter.Y() << " z:" << shape.m_physicsCenter.Z() << std::endl << 
+				"Mass center x:" << shape.m_massCenter.X() << " y:" << shape.m_massCenter.Y() << " z:" << shape.m_massCenter.Z() << std::endl << 
+				"Inverse inertia tensor a:" << shape.m_invInertia.Aside().Size() << " u:" << shape.m_invInertia.Up().Size() << " d:" << shape.m_invInertia.Direction().Size() << std::endl << 
+				"Auto center: " << shape.m_autoCenter << std::endl << 
+				"Lock auto center: " << shape.m_autoCenter2 << std::endl << 
+				"Can occlude: " << shape.m_canOcclude << std::endl << 
+				"Can be occluded: " << shape.m_canBeOccluded << std::endl << 
+				"Allow animation: " << shape.m_allowAnimation << std::endl << 
+				"Map type: " << (int)shape.m_mapType << std::endl << 
+				"Mass array count: " << shape.m_masses.size() << std::endl;
+				
+				for (size_t j=0; j<shape.m_masses.size() && options & OPTION_INFO_FULL; j++)
+					out << "\t" << j << " - " << shape.m_masses[j] << std::endl;
+					
+				out << 
+				"Mass: " << shape.m_mass << std::endl << 
+				"Mass inverse: " << shape.m_invMass << std::endl << 
+				"Armor: " << shape.m_armor << std::endl << 
+				"Armor inverse: " << shape.m_invArmor << std::endl << 
+				"Memory LOD index: " << (int)shape.m_memoryLodIndex << std::endl << 
+				"Geometry LOD index: " << (int)shape.m_geometryLodIndex << std::endl << 
+				"Fire geometry LOD index: " << (int)shape.m_geometryFireLodIndex << std::endl << 
+				"View geometry LOD index: " << (int)shape.m_geometryViewLodIndex << std::endl << 
+				"View pilot geometry LOD index: " << (int)shape.m_geometryViewPilotLodIndex << std::endl << 
+				"View gunner geometry LOD index: " << (int)shape.m_geometryViewGunnerLodIndex << std::endl << 
+				"View command geometry LOD index: " << (int)shape.m_geometryViewCommanderLodIndex << std::endl << 
+				"View cargo geometry LOD index: " << (int)shape.m_geometryViewCargoLodIndex << std::endl << 
+				"Land contact LOD index: " << (int)shape.m_landContactLodIndex << std::endl << 
+				"Roadway LOD index: " << (int)shape.m_roadwayLodIndex << std::endl << 
+				"Paths LOD index: " << (int)shape.m_pathsLodIndex << std::endl << 
+				"Hitpoints LOD index: " << (int)shape.m_hitpointsLodIndex;
+				
+				for (size_t i=0; i<shape.m_lods.size(); i++) {
+					LodShape *l = &shape.m_lods[i];
+					
+					out << std::endl << std::endl << 
+					"LOD: " << FormatLodType(shape.m_lodDistances[i]) << std::endl <<
+					"Flags count: " << l->m_flags.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_flags.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - 0x" << std::hex << l->m_flags[j] << std::dec << std::endl;
+
+					out << 
+					"UV: " << l->m_uv.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_uv.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - u:" << l->m_uv[j].X() << " v:" << l->m_uv[j].Y() << std::endl;
+					
+					out <<
+					"Points: " << l->m_positions.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_positions.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - x:" << l->m_positions[j].X() << " y:" << l->m_positions[j].Y() << " z:" << l->m_positions[j].Z() << std::endl;
+						
+					out << 
+					"Normals: " << l->m_normals.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_normals.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - x:" << l->m_normals[j].X() << " y:" << l->m_normals[j].Y() << " z:" << l->m_normals[j].Z() << std::endl;
+						
+					out << 
+					"Hints or: " << l->m_hintsOr << std::endl	<< 
+					"Hints and: " << l->m_hintsAnd << std::endl << 
+					"Min pos x:" << l->m_min.X() << " y:" << l->m_min.Y() << " z:" << l->m_min.Z() << std::endl << 
+					"Max pos x:" << l->m_max.X() << " y:" << l->m_max.Y() << " z:" << l->m_max.Z() << std::endl << 
+					"Center pos x:" << l->m_center.X() << " y:" << l->m_center.Y() << " z:" << l->m_center.Z() << std::endl << 
+					"Radius: " << l->m_radius << std::endl << 
+					"Textures: " << l->m_textureNames.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_textureNames.size(); j++)
+						out << "\t" << l->m_textureNames[j] << std::endl;
+					
+					out << 
+					"Point to vertice index: " << l->m_pointToVertices.size() << std::endl;
+					
+						for (size_t j=0; j<l->m_pointToVertices.size() && options & OPTION_INFO_FULL; j++)
+							out << "\t" << j << " " << l->m_pointToVertices[j] << std::endl;
+					
+					out << "Vertice to point index: " << l->m_vertexToPoints.size() << std::endl;
+
+						for (size_t j=0; j<l->m_vertexToPoints.size() && options & OPTION_INFO_FULL; j++)
+							out << "\t" << j << " " << l->m_vertexToPoints[j] << std::endl;				
+					
+					out << "Faces: " << l->m_orignalFaces.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_orignalFaces.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - flags:0x" << std::hex << l->m_orignalFaces[j].flags << std::dec << std::endl;
+						
+					out << 
+					"Sections: " << l->m_sections.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_sections.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - startIndex:" << l->m_sections[j].startIndex << " endIndex:" << l->m_sections[j].endIndex << " material:" << l->m_sections[j].material << " textureIndex:" << l->m_sections[j].textureIndex << " special:0x" << std::hex << l->m_sections[j].special << std::dec << std::endl;
+		
+					out << 
+					"Named sections: " << l->m_namedSections.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_namedSections.size(); j++)
+						out << "\t" << l->m_namedSections[j].name << std::endl;
+						
+					out << "Properties: " << l->m_namedProperties.size()  << std::endl;
+					
+					for (size_t j=0; j<l->m_namedProperties.size(); j++)
+						out << "\t" << l->m_namedProperties[j].name << "=" << l->m_namedProperties[j].value << std::endl;
+						
+					out << 
+					"Animation frames: " << l->m_animationPhases.size() << std::endl;
+					
+					for (size_t j=0; j<l->m_animationPhases.size() && options & OPTION_INFO_FULL; j++) {
+						out << "\t" << j << " - Time:" << l->m_animationPhases[j].time << std::endl;
+						
+						for (size_t k=0; k<l->m_animationPhases[j].points.size(); k++) {
+							out << "\t\t"
+							" x:" << l->m_animationPhases[j].points[k].X() << 
+							" y:" << l->m_animationPhases[j].points[k].Y() << 
+							" z:" << l->m_animationPhases[j].points[k].Z() << 
+							std::endl;
+						}
+					}
+
+					out << 
+					"Color top r:" << (int)l->m_color.r << " g:" << (int)l->m_color.g << " b:" << (int)l->m_color.b << " a:" << (int)l->m_color.a << std::endl << 
+					"Color r:" << (int)l->m_color2.r << " g:" << (int)l->m_color2.g << " b:" << (int)l->m_color2.b << " a:" << (int)l->m_color2.a << std::endl << 
+					"Flags: " << std::hex << "0x" << (int)l->m_flags2 << std::endl;
+
+					for (unsigned int j=1; options & OPTION_INFO_FULL && j<0x80000000; j*=2)
+						if (l->m_flags2 & j) 
+							out << "\t 0x" << j << std::endl;
+						
+					out << std::dec <<
+					"Proxies: " << l->m_proxies.size();
+					
+					for (size_t j=0; j<l->m_proxies.size(); j++)
+						out << std::endl << "\t" << l->m_proxies[j].name;
+				}
 			}
 		} 
 		else {
@@ -1271,7 +1317,6 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 							}
 						} else {
 							for (auto [weight, index] : fp::zip(sec.vertexWeights, sec.vertexIndices)) {								
-								//std::cout << index << ' ' << weight << '\n';
 								sectionWeights[merge_this_lod ? lod.VertexToPoint(index) : index] = -weight; // why
 							}
 						}
@@ -1295,7 +1340,7 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 				}
 
 				// Mass
-				if (lodIndex == shape.GetGeometryLodIndex() && !shape.GetMasses().empty()) {
+				if ((int)lodIndex == shape.GetGeometryLodIndex() && !shape.GetMasses().empty()) {
 					WriteName<64>(out, "#Mass#");
 					
 					if (merge_this_lod) {
@@ -1324,13 +1369,13 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 				}
 				
 				// Animations
-				for (int j=0; j<lod.m_animationPhases.size(); j++) {
+				for (size_t j=0; j<lod.m_animationPhases.size(); j++) {
 					WriteName<64>(out, "#Animation#");
 					uint32_t tagg_size = sizeof(lod.m_animationPhases[j].time) + 3u * lod.m_animationPhases[j].points.size() * sizeof(float);
 					out.write(fp::to_bytes(static_cast<uint32_t>(tagg_size)));
 					out.write(fp::to_bytes(lod.m_animationPhases[j].time));
 					
-					for (int k=0; k<lod.m_animationPhases[j].points.size(); k++) {
+					for (size_t k=0; k<lod.m_animationPhases[j].points.size(); k++) {
 						out.write(fp::to_bytes(lod.m_animationPhases[j].points[k].X()));
 						out.write(fp::to_bytes(lod.m_animationPhases[j].points[k].Y()));
 						out.write(fp::to_bytes(lod.m_animationPhases[j].points[k].Z()));
@@ -1349,141 +1394,181 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 		if (options & OPTION_INFO) {
 			ShapeMLOD shape(file);
 
-			out << 
-			filename_input << " - " << file_info << std::endl << std::endl <<
-			"Signature: "<< FormatSignature(current_file_signature) << std::endl << 
-			"Version: " << shape.version << std::endl <<
-			"Number of LODs: " << shape.lod_count << std::endl <<
-			"SP3X default path: " << shape.SP3X_DefaultPath << std::endl;
-			
-			for (int i=0; i<shape.lods.size(); i++) {
-				LodShapeMLOD *l = &shape.lods[i];
-				
-				if (l->signature != signature_sp3x) {
-					out << "LOD format " << FormatSignature(l->signature) << " not supported" << std::endl;
-					break;
+			if (options & OPTION_TEXTURE_LIST) {
+				if (~options & OPTION_TEXTURE_LIST_SINGLE) {
+					out << filename_input << std::endl << std::endl;
+					global.texture_list.clear();
 				}
+				bool output_lod_name = false;
 				
-				bool animation_done  = false;
-				bool property_done   = false;
-				int nselection_index = 0;
+				for (size_t i=0; i<shape.lods.size(); i++) {
+					LodShapeMLOD *l = &shape.lods[i];
+					
+					if (options & OPTION_TEXTURE_LIST_LODS) {
+						output_lod_name = true;
+						global.texture_list.clear();
+					}
+					
+					for (size_t j=0; j<l->faces.size(); j++) {
+						bool already_added = false;
+						
+						if (l->faces[j].texture.empty()) 
+							continue;
+						
+						for (size_t k=0; k<global.texture_list.size() && !already_added; k++)
+							if (strcasecmp(global.texture_list[k].c_str(),l->faces[j].texture.c_str()) == 0)
+								already_added = true;
+					
+						if (!already_added) {
+							if (output_lod_name) {
+								output_lod_name = false;
+								out << "LOD: " << FormatLodType(l->resolution) << std::endl;
+							}
+							
+							if (~options & OPTION_TEXTURE_LIST_SINGLE)
+								out << (options & OPTION_TEXTURE_LIST_LODS ? "\t" : "") <<	l->faces[j].texture << std::endl;
+							
+							global.texture_list.push_back(l->faces[j].texture);
+						}
+					}
+				}
+			} else {
+				out << 
+				filename_input << " - " << file_info << std::endl << std::endl <<
+				"Signature: "<< FormatSignature(current_file_signature) << std::endl << 
+				"Version: " << shape.version << std::endl <<
+				"Number of LODs: " << shape.lod_count << std::endl <<
+				"SP3X default path: " << shape.SP3X_DefaultPath << std::endl;
 				
-				out << std::endl <<
-				"LOD: " << FormatLodType(l->resolution) << std::endl <<
-				"Signature: " << FormatSignature(l->signature) << std::endl << 
-				"Major version: " << l->major_version << std::endl << 
-				"Minor version: " << l->minor_version << std::endl << 
-				"Points: " << l->points.size() << std::endl;
-				
-				for (int j=0; j<l->points.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - x:" << l->points[j].pos.X() << " y:" << l->points[j].pos.Y() << " z:" << l->points[j].pos.Z() << " flags:0x" << std::hex << l->points[j].flags << std::dec << std::endl;
-				
-				out << "Normals: " << l->normals.size() << std::endl;
-				
-				for (int j=0; j<l->normals.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - x:" << l->normals[j].X() << " y:" << l->normals[j].Y() << " z:" << l->normals[j].Z() << std::endl;
-				
-				out << "Faces: " << l->faces.size() << std::endl;
-				
-				for (int j=0; j<l->faces.size() && options & OPTION_INFO_FULL; j++)
-					out << "\t" << j << " - texture:" << l->faces[j].texture << " type:" << l->faces[j].type << " flags:0x" << std::hex << l->faces[j].flags << std::dec << std::endl;
-				
-				out << "Tags: " << l->tags.size() << std::endl;
+				for (size_t i=0; i<shape.lods.size(); i++) {
+					LodShapeMLOD *l = &shape.lods[i];
+					
+					if (l->signature != signature_sp3x) {
+						out << "LOD format " << FormatSignature(l->signature) << " not supported" << std::endl;
+						break;
+					}
+					
+					bool animation_done  = false;
+					bool property_done   = false;
+					//int nselection_index = 0;
+					
+					out << std::endl <<
+					"LOD: " << FormatLodType(l->resolution) << std::endl <<
+					"Signature: " << FormatSignature(l->signature) << std::endl << 
+					"Major version: " << l->major_version << std::endl << 
+					"Minor version: " << l->minor_version << std::endl << 
+					"Points: " << l->points.size() << std::endl;
+					
+					for (size_t j=0; j<l->points.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - x:" << l->points[j].pos.X() << " y:" << l->points[j].pos.Y() << " z:" << l->points[j].pos.Z() << " flags:0x" << std::hex << l->points[j].flags << std::dec << std::endl;
+					
+					out << "Normals: " << l->normals.size() << std::endl;
+					
+					for (size_t j=0; j<l->normals.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - x:" << l->normals[j].X() << " y:" << l->normals[j].Y() << " z:" << l->normals[j].Z() << std::endl;
+					
+					out << "Faces: " << l->faces.size() << std::endl;
+					
+					for (size_t j=0; j<l->faces.size() && options & OPTION_INFO_FULL; j++)
+						out << "\t" << j << " - texture:" << l->faces[j].texture << " type:" << l->faces[j].type << " flags:0x" << std::hex << l->faces[j].flags << std::dec << std::endl;
+					
+					out << "Tags: " << l->tags.size() << std::endl;
 
-				for (int j=0; j<l->tags.size(); j++) {
-					if (l->tags[j] == "#SharpEdges#") {
-						out << "\t" << l->tags[j] << " count: " << l->sharp_edges.size()/2;
-						
-						for (int k=0; k<l->sharp_edges.size() && options & OPTION_INFO_FULL; k++)
-							if (k%2)
-								out << " " << l->sharp_edges[k];
-							else
-								out << std::endl << "\t\t" << k/2 << " - " << l->sharp_edges[k];
+					for (size_t j=0; j<l->tags.size(); j++) {
+						if (l->tags[j] == "#SharpEdges#") {
+							out << "\t" << l->tags[j] << " count: " << l->sharp_edges.size()/2;
 							
-						out << std::endl;
-					}
-					else
-					if (l->tags[j] == "#Property#") {
-						if (l->properties.size()>1  &&  !property_done) {
-							property_done = true;
-							out << "\t" << l->tags[j] << std::endl;
-							
-							for (int j=0; j<l->properties.size()/2; j+=2)
-								out << "\t\t" << l->properties[j] << "=" << l->properties[j+1] << std::endl;
+							for (size_t k=0; k<l->sharp_edges.size() && options & OPTION_INFO_FULL; k++)
+								if (k%2)
+									out << " " << l->sharp_edges[k];
+								else
+									out << std::endl << "\t\t" << k/2 << " - " << l->sharp_edges[k];
+								
+							out << std::endl;
 						}
-					}
-					else
-					if (l->tags[j] == "#Animation#") {
-						if (l->animations.size()>0  &&  !animation_done) {
-							animation_done = true;
-							out << "\t" << l->tags[j] << " frames: " << l->animations.size() << std::endl;
-							
-							if (options & OPTION_INFO_FULL) {
-								for (int animation_index=0; animation_index<l->animations.size(); animation_index++) {
-									out << "\t\t" << animation_index << " - Time: " << l->animations[animation_index].frame_time << std::endl;
-									
-									for (int bone_index=0; bone_index<l->animations[animation_index].bone_pos.size(); bone_index++)
-										out << "\t\t\t" << 
-										" x:" << l->animations[animation_index].bone_pos[bone_index].X() << 
-										" y:" << l->animations[animation_index].bone_pos[bone_index].Y() << 
-										" z:" << l->animations[animation_index].bone_pos[bone_index].Z() << 
-										std::endl;
+						else
+						if (l->tags[j] == "#Property#") {
+							if (l->properties.size()>1  &&  !property_done) {
+								property_done = true;
+								out << "\t" << l->tags[j] << std::endl;
+								
+								for (size_t j=0; j<l->properties.size()/2; j+=2)
+									out << "\t\t" << l->properties[j] << "=" << l->properties[j+1] << std::endl;
+							}
+						}
+						else
+						if (l->tags[j] == "#Animation#") {
+							if (l->animations.size()>0  &&  !animation_done) {
+								animation_done = true;
+								out << "\t" << l->tags[j] << " frames: " << l->animations.size() << std::endl;
+								
+								if (options & OPTION_INFO_FULL) {
+									for (size_t animation_index=0; animation_index<l->animations.size(); animation_index++) {
+										out << "\t\t" << animation_index << " - Time: " << l->animations[animation_index].frame_time << std::endl;
+										
+										for (size_t bone_index=0; bone_index<l->animations[animation_index].bone_pos.size(); bone_index++)
+											out << "\t\t\t" << 
+											" x:" << l->animations[animation_index].bone_pos[bone_index].X() << 
+											" y:" << l->animations[animation_index].bone_pos[bone_index].Y() << 
+											" z:" << l->animations[animation_index].bone_pos[bone_index].Z() << 
+											std::endl;
+									}
 								}
 							}
 						}
-					}
-					else
-					if (l->tags[j] == "#Mass#") {
-						double mass_total = 0;
-						std::string list  = "";
-						
-						for (int k=0; k<l->mass.size(); k++) {
+						else
+						if (l->tags[j] == "#Mass#") {
+							double mass_total = 0;
+							std::string list  = "";
+							
+							for (size_t k=0; k<l->mass.size(); k++) {
+								if (options & OPTION_INFO_FULL)
+									list += "\n\t\t" + std::to_string(k) + " - " + std::to_string(l->mass[k]);
+								
+								mass_total += l->mass[k];
+							}
+							
+							out << "\t" << l->tags[j] << " sum:" << mass_total;
+							
 							if (options & OPTION_INFO_FULL)
-								list += "\n\t\t" + std::to_string(k) + " - " + std::to_string(l->mass[k]);
+								out << list;
 							
-							mass_total += l->mass[k];
+							out << std::endl;
 						}
-						
-						out << "\t" << l->tags[j] << " sum:" << mass_total;
-						
-						if (options & OPTION_INFO_FULL)
-							out << list;
-						
-						out << std::endl;
-					}
-					else
-					if (l->tags[j] == "#MaterialIndex#") {
-						out << "\t" << l->tags[j] << std::endl
-						<< "Ambient r:" << (int)l->materials[i].ambient.r << " g:" << (int)l->materials[i].ambient.g << " b:" << (int)l->materials[i].ambient.b << " a:" << (int)l->materials[i].ambient.a << std::endl 
-						<< "Diffuse r:" << (int)l->materials[i].diffuse.r << " g:" << (int)l->materials[i].diffuse.g << " b:" << (int)l->materials[i].diffuse.b << " a:" << (int)l->materials[i].diffuse.a << std::endl 
-						<< "Specular r:" << (int)l->materials[i].specular.r << " g:" << (int)l->materials[i].specular.g << " b:" << (int)l->materials[i].specular.b << " a:" << (int)l->materials[i].specular.a << std::endl 
-						<< "Emissive r:" << (int)l->materials[i].emissive.r << " g:" << (int)l->materials[i].emissive.g << " b:" << (int)l->materials[i].emissive.b << " a:" << (int)l->materials[i].emissive.a << std::endl;
-					}
-					else {
-						out << "\t" << l->tags[j];
-						
-						// Byte listing produces too large file
-						/*if (l->tags[j][0] != '#') {
-							if (options & OPTION_INFO_FULL  &&  l->tags[j][0]!='-'  &&  l->tags[j][0]!='.') {
-								out << " " << l->named_selections[nselection_index].point.size();
-								
-								for (int k=0; k<l->named_selections[nselection_index].point.size(); k++) {
-									out << std::endl 
-									<< "\t\t" << k << " - " 
-									<< std::to_string(l->named_selections[nselection_index].point[k]) << " ";
-								}
-								
-								for (int k=0; k<k<l->named_selections[nselection_index].face.size(); k++) {
-									out << std::endl 
-									<< "\t\t" << k << " - " 
-									<< std::to_string(l->named_selections[nselection_index].face[k]);
-								}
-							}
+						else
+						if (l->tags[j] == "#MaterialIndex#") {
+							out << "\t" << l->tags[j] << std::endl
+							<< "Ambient r:" << (int)l->materials[i].ambient.r << " g:" << (int)l->materials[i].ambient.g << " b:" << (int)l->materials[i].ambient.b << " a:" << (int)l->materials[i].ambient.a << std::endl 
+							<< "Diffuse r:" << (int)l->materials[i].diffuse.r << " g:" << (int)l->materials[i].diffuse.g << " b:" << (int)l->materials[i].diffuse.b << " a:" << (int)l->materials[i].diffuse.a << std::endl 
+							<< "Specular r:" << (int)l->materials[i].specular.r << " g:" << (int)l->materials[i].specular.g << " b:" << (int)l->materials[i].specular.b << " a:" << (int)l->materials[i].specular.a << std::endl 
+							<< "Emissive r:" << (int)l->materials[i].emissive.r << " g:" << (int)l->materials[i].emissive.g << " b:" << (int)l->materials[i].emissive.b << " a:" << (int)l->materials[i].emissive.a << std::endl;
+						}
+						else {
+							out << "\t" << l->tags[j];
 							
-							nselection_index++;
-						}*/
-						
-						out << std::endl;
+							// Byte listing produces too large of a file
+							/*if (l->tags[j][0] != '#') {
+								if (options & OPTION_INFO_FULL  &&  l->tags[j][0]!='-'  &&  l->tags[j][0]!='.') {
+									out << " " << l->named_selections[nselection_index].point.size();
+									
+									for (int k=0; k<l->named_selections[nselection_index].point.size(); k++) {
+										out << std::endl 
+										<< "\t\t" << k << " - " 
+										<< std::to_string(l->named_selections[nselection_index].point[k]) << " ";
+									}
+									
+									for (int k=0; k<k<l->named_selections[nselection_index].face.size(); k++) {
+										out << std::endl 
+										<< "\t\t" << k << " - " 
+										<< std::to_string(l->named_selections[nselection_index].face[k]);
+									}
+								}
+								
+								nselection_index++;
+							}*/
+							
+							out << std::endl;
+						}
 					}
 				}
 			}
@@ -1558,7 +1643,7 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 			else
 				break;
 	
-		double final_size = size[select];
+		double final_size = select>=0 ? size[select] : 0;
 		
 		if (select > 0)
 			final_size += size[select-1] / 1024;
@@ -1592,11 +1677,10 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 	}
 	
 	int ScanDirectory(std::string path, int &options)
-	{
+	{		
 		WIN32_FIND_DATA fd;
 		std::string wildcard = path + "\\*";
 		HANDLE hFind         = FindFirstFile(wildcard.c_str(), &fd);
-		int return_value     = 0;
 
 		if (hFind == INVALID_HANDLE_VALUE) {
 			FormatError(GetLastError());
@@ -1606,7 +1690,7 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 		do {
 			std::string file_name = (std::string)fd.cFileName;
 			std::string full_path = path + "\\" + file_name;
-			
+
 			if (file_name == "." || file_name == "..")
 				continue;
 				
@@ -1624,7 +1708,7 @@ int Parse_P3D(std::string filename_input, std::string file_info, int &options) {
 						bool file_ok = true;
 						
 						// Ignore files that were created by this program in this instance
-						for (int i=0; i<global.files_to_skip.size() && file_ok; i++)
+						for (size_t i=0; i<global.files_to_skip.size() && file_ok; i++)
 							if (full_path == global.files_to_skip[i])
 								file_ok = false;
 						
@@ -1647,7 +1731,7 @@ int main(int argc, char* argv[]) {
 	
 	if (argc < 2) {
 		std::cout << 
-		"odol2mlod v1.0 by Miki and Faguss (ofp-faguss.com)" << std::endl <<
+		"odol2mlod v1.01 by Miki and Faguss (ofp-faguss.com)" << std::endl <<
 		"Converts OFP/CWA P3D model from the ODOL format to the MLOD format" << std::endl << std::endl <<
 		"Usage: odol2mlod [options] <file or dir> ..." << std::endl << std::endl <<
 		"Options:" << std::endl << 
@@ -1657,7 +1741,10 @@ int main(int argc, char* argv[]) {
 		"\t-r scan directories recursively" << std::endl <<
 		"\t-i create info file (instead of converting)" << std::endl <<
 		"\t-I create full info file (instead of converting)" << std::endl <<
-		"\t-s create a single info file (instead of one for each model)" << std::endl;
+		"\t-s create a single info file (instead of one for each model)" << std::endl << 
+		"\t-t create info file only with a texture list" << std::endl <<
+		"\t-T create info file only with a texture list from each LOD" << std::endl <<
+		"\t-l create single info only with a texture list without p3d names" << std::endl;
 		return_value = 1;
 	} else {
 		int options = OPTION_NONE;
@@ -1666,13 +1753,16 @@ int main(int argc, char* argv[]) {
 			if (argv[i][0] == '-') {
 				for (int j=1; argv[i][j]!='\0'; j++) {
 					switch(argv[i][j]) {
-						case 'I' : options |= OPTION_INFO | OPTION_INFO_FULL; break;
 						case 'i' : options |= OPTION_INFO; break;
+						case 'I' : options |= OPTION_INFO | OPTION_INFO_FULL; break;
 						case 'r' : options |= OPTION_RECURSIVE; break;
 						case 's' : options |= OPTION_SINGLELOG | OPTION_TRUNCATE; break;
 						case 'm' : options |= OPTION_MERGE_POINTS; break;
 						case 'M' : options |= OPTION_MERGE_POINTS_SELECTIVE; break;
 						case 'u' : options |= OPTION_ONLY_USER_VALUE; break;
+						case 't' : options |= OPTION_INFO | OPTION_TEXTURE_LIST; break;
+						case 'T' : options |= OPTION_INFO | OPTION_TEXTURE_LIST | OPTION_TEXTURE_LIST_LODS; break;
+						case 'l' : options |= OPTION_SINGLELOG | OPTION_TRUNCATE | OPTION_INFO | OPTION_TEXTURE_LIST | OPTION_TEXTURE_LIST_SINGLE; break;
 					}
 				}
 			} else {
@@ -1687,11 +1777,22 @@ int main(int argc, char* argv[]) {
 									return_value = 3;
 							} else
 								return_value = 2;
-						} else
-							if (Parse_P3D(argv[i], FormatFileInfo(fd.ftLastWriteTime, fd.nFileSizeLow), options) == 0)
-								return_value = 0;
-							else
-								return_value = 3;
+						} else {
+							std::string file_name = argv[i];
+							size_t dot = file_name.find_last_of('.');
+							
+							if (dot != std::string::npos) {
+								std::string extension = file_name.substr(dot + 1);
+								transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+								
+								if (extension == "p3d") {
+									if (Parse_P3D(file_name, FormatFileInfo(fd.ftLastWriteTime, fd.nFileSizeLow), options) == 0)
+										return_value = 0;
+									else
+										return_value = 3;
+								}
+							}
+						}
 					} else {
 						FormatError(GetLastError());
 						return_value = 2;
@@ -1701,7 +1802,24 @@ int main(int argc, char* argv[]) {
 				#endif
 			}
 		}
+		
+		if (options & OPTION_TEXTURE_LIST_SINGLE) {
+			std::fstream out;
+			out.open("odol2mlod_texture_list.txt", std::ios::out | std::ios::trunc);
+			
+			if (!out.is_open()) {
+				std::cout << "Failed to open odol2mlod.txt - error " << errno << ": " << strerror(errno) << std::endl;
+				return 1;
+			}
+			
+			for (size_t i=0; i<global.texture_list.size(); i++) {
+				out << global.texture_list[i] << std::endl;
+			}
+			
+			out.close();
+		}
 	}
+	
 
 	if (global.files_total > 1)
 		std::cout << "Files ok: " << global.files_ok << "/" << global.files_total << std::endl;

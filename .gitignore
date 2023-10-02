@@ -2,3 +2,4 @@
 *.obj
 *.a
 *.bin
+build/
