@@ -4,6 +4,6 @@ Converts 3D models (.P3D extension) for the video game [Operation Flashpoint](ht
 
 Coded by Miki. Additional options by [Faguss](https://ofp-faguss.com).
 
-Build files generated with CMake 3.27.6. Compiled with gcc (x86_64-win32-seh-rev0, Built by MinGW-W64 project) 8.1.0
+Build files generated with CMake 3.27.6. Compiled with gcc (x86_64-win32-sjlj-rev0, Built by MinGW-W64 project) 8.1.0
 
 Binary and readme: https://ofp-faguss.com/odol2mlod or see [releases](https://github.com/Faguss/odol2mlod/releases)
