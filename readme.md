@@ -1,3 +1,5 @@
+THIS PROGRAM IS NOT FOR ARMA3. USE [THIS](https://github.com/Crip12/P3D-Debinarizer-Arma-3) INSTEAD.
+
 # odol2mlod
 
 Converts 3D models (.P3D extension) for the video game [Operation Flashpoint](https://en.wikipedia.org/wiki/Operation_Flashpoint:_Cold_War_Crisis) (also known as ArmA: Cold War Assault) from the [ODOL v7](https://community.bistudio.com/wiki/P3D_File_Format_-_ODOLV7) to the [MLOD](https://community.bistudio.com/wiki/P3D_File_Format_-_MLOD) SP3X format.
